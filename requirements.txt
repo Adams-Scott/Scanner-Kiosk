@@ -1,1 +1,3 @@
 img2pdf
+Pillow
+python-sane
