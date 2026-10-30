@@ -34,7 +34,12 @@ To test it on its own:
 ```bash
 scanimage -d fujitsu -A | grep -A1 -i hardware   # the "scan" sensor should be listed
 python3 button.py                                # press the button with paper loaded
+python3 button.py --debug                        # also log every sensor change
 ```
+
+If nothing happens on a press, run with `--debug` and press the button: the log
+shows whether the `scan` sensor changes. "Scanner unavailable ... Device busy"
+means another program (for example `scanbd` or `saned`) is holding the scanner.
 
 `ButtonWatcher` polls the button while idle and releases the scanner while a scan
 runs. Anything else that scans (the touch UI) should do so inside
