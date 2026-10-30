@@ -1,0 +1,15 @@
+[Unit]
+Description=Scanner Kiosk (ScanSnap button -> Papra)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=scott
+WorkingDirectory=/home/scott/Scanner-Kiosk
+EnvironmentFile=/etc/scanner-kiosk.env
+ExecStart=/home/scott/Scanner-Kiosk/.venv/bin/python kiosk.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

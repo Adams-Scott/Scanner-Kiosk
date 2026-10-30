@@ -44,6 +44,7 @@ class ButtonWatcher:
         self._checked = False
         self._last_tick = time.monotonic()   # for the --debug stall watchdog
         self._scanning = False
+        self._reinit = False                 # reset SANE before the next open
 
     # -- device handling ------------------------------------------------
     def _open(self):
@@ -53,6 +54,13 @@ class ButtonWatcher:
         # network first: slow (~7 s), and the button went undetected when
         # the watcher started that way, but not when opened by name.
         name = self._devname or DEVICE
+        if self._reinit:
+            # The fujitsu driver caches the scanner's USB address from the
+            # first open. After the ScanSnap powers off (lid closed) and back
+            # on, that address is stale, so restart SANE to rediscover it.
+            sane.exit()
+            sane.init()
+            self._reinit = False
         try:
             self._dev = sane.open(name)
         except Exception as e:
@@ -126,6 +134,14 @@ class ButtonWatcher:
             return default
         return bool(self._dev.dev.get_option(opt.index))
 
+    def state(self) -> dict:
+        """Scanner connection state for status displays."""
+        if self._offline_msg:
+            return {"online": False, "message": self._offline_msg}
+        if not self._checked:
+            return {"online": False, "message": "Connecting to the scanner…"}
+        return {"online": True, "message": "Ready"}
+
     @contextmanager
     def released(self):
         """Borrow the scanner from the watcher, e.g. for a touch-screen scan.
@@ -153,7 +169,8 @@ class ButtonWatcher:
                 self._prev = pressed
             except Exception as e:
                 self._close()
-                msg = f"{type(e).__name__}: {e}"
+                self._reinit = True
+                msg = str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}"
                 if msg != self._offline_msg:      # log each new reason once
                     log.warning("Scanner unavailable (%s); retrying every %ds",
                                 msg, RETRY_DELAY)

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f2ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161514" media="(prefers-color-scheme: dark)">
+<title>Scanner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='24' height='16' rx='3' fill='%23366a5a'/%3E%3Crect x='8' y='4' width='16' height='8' rx='1' fill='%23e8e4dc'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f4f2ee; --card: #ffffff; --ink: #1d1c1a; --muted: #6d6a64; --line: #e4e0d8;
+    --accent: #366a5a; --accent-ink: #ffffff; --accent-soft: #e3eee9;
+    --ok: #2f7a4f; --warn: #a1620f; --bad: #b3372b; --bad-soft: #f8e6e3; --warn-soft: #f7ecd9;
+    --radius: 14px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161514; --card: #201f1d; --ink: #ece9e3; --muted: #a29e96; --line: #33312d;
+      --accent: #6fb39c; --accent-ink: #0f1a16; --accent-soft: #23332d;
+      --ok: #6cc28f; --warn: #e0a54f; --bad: #ec7d70; --bad-soft: #3a2421; --warn-soft: #3a2f1e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px calc(32px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 4px 10px; font-weight: 600; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+          background: var(--card); border: 1px solid var(--line); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.busy { background: var(--warn); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .hero { margin-top: 16px; display: grid; gap: 10px; }
+  .hero .big { font-size: 20px; font-weight: 650; }
+  .line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; min-width: 0; }
+  .line span:last-child { overflow-wrap: anywhere; }
+
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .opt { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+         border-radius: 12px; padding: 12px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; min-height: 52px; }
+  .opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+  .opt small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 2px; }
+  .scan { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .scan small { color: inherit; opacity: .8; }
+  .scan:disabled { opacity: .45; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 4px 0; }
+
+  .jobs { display: grid; gap: 8px; }
+  .job { display: grid; gap: 6px; }
+  .job .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .job .when { font-weight: 600; }
+  .job .meta { color: var(--muted); font-size: 13px; }
+  .chip { font-size: 12px; font-weight: 650; padding: 3px 9px; border-radius: 999px; white-space: nowrap; background: var(--accent-soft); color: var(--ok); }
+  .chip.wait { background: var(--warn-soft); color: var(--warn); }
+  .chip.bad { background: var(--bad-soft); color: var(--bad); }
+  .err { font-size: 13px; color: var(--bad); overflow-wrap: anywhere; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .link { appearance: none; border: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 14px;
+          padding: 7px 12px; border-radius: 10px; text-decoration: none; cursor: pointer; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+
+  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 528px; margin: 0 auto;
+           background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 12px; font-size: 15px;
+           transform: translateY(150%); transition: transform .25s, visibility .25s; visibility: hidden; }
+  #toast.show { transform: none; visibility: visible; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Scanner</h1>
+    <span class="pill"><span class="dot" id="pill-dot"></span><span id="pill-text">Loading…</span></span>
+  </header>
+
+  <section class="card hero">
+    <div class="big" id="hero">Connecting…</div>
+    <div class="line"><span class="dot" id="scanner-dot"></span><span id="scanner-msg">Scanner</span></div>
+    <div class="line"><span class="dot" id="papra-dot"></span><span id="papra-msg">Papra</span></div>
+  </section>
+
+  <h2>Scan button does</h2>
+  <div class="seg" id="button-presets"></div>
+
+  <h2>Scan now from this phone</h2>
+  <div class="seg" id="scan-presets"></div>
+  <p class="hint">Load the paper first. Scans upload to Papra automatically.</p>
+
+  <div class="row"><h2>Recent scans</h2><button class="link" id="retry-all" hidden>Retry failed</button></div>
+  <div class="jobs" id="jobs"><div class="empty">No scans yet</div></div>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null, timer = null, pending = false;
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+function when(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return `Today ${time}`;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+function inSecs(s) {
+  if (s < 60) return `${Math.max(1, Math.round(s))} s`;
+  return `${Math.round(s / 60)} min`;
+}
+
+function chip(job, now) {
+  switch (job.status) {
+    case "uploaded": return ["Uploaded", ""];
+    case "scanning": return ["Scanning…", "wait"];
+    case "uploading": return ["Uploading…", "wait"];
+    case "pending": return [job.attempts ? `Retrying in ${inSecs(job.next_try - now)}` : "Waiting to upload", "wait"];
+    case "failed": return ["Upload failed", "bad"];
+    case "scan_failed": return ["Scan failed", "bad"];
+  }
+  return [job.status, ""];
+}
+
+function presetButtons(el, presets, isOn, onTap, cls) {
+  el.innerHTML = "";
+  for (const p of presets) {
+    const b = document.createElement("button");
+    const [mode, sides] = p.label.split(", ");
+    b.className = "opt" + (cls ? " " + cls : "");
+    b.innerHTML = `${mode}<small>${sides}</small>`;
+    b.dataset.id = p.id;
+    if (isOn) b.setAttribute("aria-pressed", isOn(p.id));
+    b.onclick = () => onTap(p.id, b);
+    el.appendChild(b);
+  }
+}
+
+function render(s) {
+  const busy = s.activity, online = s.scanner.online;
+  $("pill-dot").className = "dot " + (busy ? "busy" : online ? "ok" : "bad");
+  $("pill-text").textContent = busy ? (busy.startsWith("Scan") ? "Scanning" : "Uploading") : online ? "Ready" : "Offline";
+  const label = s.presets.find(p => p.id === s.button_preset)?.label || s.button_preset;
+  $("hero").textContent = busy || (online ? `Press Scan for ${label.replace(", ", " ")}` : "Scanner offline");
+  $("scanner-dot").className = "dot " + (online ? "ok" : "bad");
+  $("scanner-msg").textContent = online ? "Scanner connected" : s.scanner.message;
+  $("papra-dot").className = "dot " + (s.papra.ok ? "ok" : s.papra.ok === false ? "bad" : "");
+  $("papra-msg").textContent = s.papra.ok ? "Papra connected" : s.papra.ok === false ? s.papra.message : "Checking Papra…";
+
+  presetButtons($("button-presets"), s.presets, id => id === s.button_preset, async (id) => {
+    try { await api("/api/settings", { button_preset: id }); refresh(); } catch (e) { toast(e.message); }
+  });
+  presetButtons($("scan-presets"), s.presets, null, async (id, b) => {
+    b.disabled = true;
+    try { await api("/api/scan", { preset: id }); toast("Scanning…"); refresh(); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  }, "scan");
+  for (const b of $("scan-presets").children) b.disabled = !!busy || !online;
+
+  const jobs = $("jobs");
+  if (!s.jobs.length) { jobs.innerHTML = '<div class="empty">No scans yet</div>'; }
+  else {
+    jobs.innerHTML = "";
+    for (const j of s.jobs) {
+      const [text, cls] = chip(j, s.now);
+      const preset = (s.presets.find(p => p.id === j.preset)?.label || j.preset).replace(", ", " ");
+      const bits = [];
+      if (j.pages) bits.push(`${j.pages} page${j.pages === 1 ? "" : "s"}`);
+      if (j.blanks) bits.push(`${j.blanks} blank removed`);
+      bits.push(preset, j.source === "button" ? "Scan button" : "Phone");
+      const el = document.createElement("div");
+      el.className = "card job";
+      el.innerHTML = `<div class="top"><span class="when"></span><span class="chip ${cls}"></span></div>
+        <div class="meta"></div>${j.error && j.status !== "uploaded" ? '<div class="err"></div>' : ""}<div class="actions"></div>`;
+      el.querySelector(".when").textContent = when(j.created);
+      el.querySelector(".chip").textContent = text;
+      el.querySelector(".meta").textContent = bits.join(" · ");
+      if (j.error && j.status !== "uploaded") el.querySelector(".err").textContent = j.error;
+      const actions = el.querySelector(".actions");
+      if (j.has_pdf) {
+        const a = document.createElement("a");
+        a.className = "link"; a.href = `/api/jobs/${j.id}/pdf`; a.target = "_blank"; a.textContent = "View PDF";
+        actions.appendChild(a);
+      }
+      if ((j.status === "failed" || (j.status === "pending" && j.attempts)) && j.has_pdf) {
+        const b = document.createElement("button");
+        b.className = "link"; b.textContent = "Retry upload";
+        b.onclick = async () => { try { await api("/api/retry", { id: j.id }); refresh(); } catch (e) { toast(e.message); } };
+        actions.appendChild(b);
+      }
+      if (!actions.children.length) actions.remove();
+      jobs.appendChild(el);
+    }
+  }
+  $("retry-all").hidden = !s.jobs.some(j => j.status === "failed" && j.has_pdf);
+}
+
+$("retry-all").onclick = async () => {
+  try { const r = await api("/api/retry", {}); toast(`Retrying ${r.queued} upload${r.queued === 1 ? "" : "s"}`); refresh(); }
+  catch (e) { toast(e.message); }
+};
+
+async function refresh() {
+  if (pending) return;
+  pending = true;
+  try { state = await api("/api/status"); render(state); }
+  catch (e) {
+    $("pill-dot").className = "dot bad"; $("pill-text").textContent = "No connection";
+    $("hero").textContent = "Can't reach the scanner service";
+  }
+  finally { pending = false; }
+}
+
+function schedule() {
+  clearInterval(timer);
+  if (!document.hidden) { refresh(); timer = setInterval(refresh, 2000); }
+}
+document.addEventListener("visibilitychange", schedule);
+schedule();
+</script>
+</body>
+</html>

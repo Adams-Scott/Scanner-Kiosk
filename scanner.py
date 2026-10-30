@@ -12,6 +12,13 @@ SCAN_ROOT = Path("/tmp/scan")
 
 # skip_blank: drop pages that come out blank (mostly the empty backs of
 # single-sided originals fed through in duplex).
+LABELS = {
+    "bw_double": "B&W, double-sided",
+    "bw_single": "B&W, single-sided",
+    "color_double": "Color, double-sided",
+    "color_single": "Color, single-sided",
+}
+
 PRESETS = {
     "color_single": dict(mode="Color",   res=200, source="ADF Front",  skip_blank=False),
     "color_double": dict(mode="Color",   res=200, source="ADF Duplex", skip_blank=True),
@@ -75,10 +82,11 @@ def remove_blank_pages(job: Path, pages: list[Path], dpi: int) -> list[Path]:
     return kept
 
 
-def scan(preset: str) -> tuple[Path, list[Path]]:
+def scan(preset: str, job: Path | None = None) -> tuple[Path, list[Path]]:
+    """Scan into `job` (a new folder under SCAN_ROOT if not given)."""
     p = PRESETS[preset]
-    job = SCAN_ROOT / uuid.uuid4().hex
-    job.mkdir(parents=True)
+    job = job or SCAN_ROOT / uuid.uuid4().hex
+    job.mkdir(parents=True, exist_ok=True)
     cmd = [
         "scanimage", "-d", "fujitsu",
         "--source", p["source"], "--mode", p["mode"],
