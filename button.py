@@ -25,6 +25,7 @@ BUTTON_PRESET = "bw_double"   # what a button press scans
 POLL_INTERVAL = 0.1           # seconds between sensor reads
 RETRY_DELAY = 3               # seconds between reopen attempts when offline
 BUTTON_SENSOR = "scan"        # fujitsu driver's name for the Scan button
+DEVICE = "fujitsu"            # SANE device to watch (same as scanimage -d)
 
 
 class ButtonWatcher:
@@ -45,19 +46,19 @@ class ButtonWatcher:
         self._scanning = False
 
     # -- device handling ------------------------------------------------
-    def _find(self) -> str:
-        for name, vendor, model, _ in sane.get_devices():
-            if name.startswith("fujitsu"):
-                return name
-        raise RuntimeError("ScanSnap not found (powered off or lid closed?)")
-
     def _open(self):
-        self._devname = self._devname or self._find()
+        # Open by backend name ("fujitsu" = first fujitsu scanner), the same
+        # way scanimage -d fujitsu does. Listing devices with
+        # sane.get_devices() would load every SANE backend and probe the
+        # network first: slow (~7 s), and the button went undetected when
+        # the watcher started that way, but not when opened by name.
+        name = self._devname or DEVICE
         try:
-            self._dev = sane.open(self._devname)
-        except Exception:
-            self._devname = None          # re-enumerate on the next attempt
-            raise
+            self._dev = sane.open(name)
+        except Exception as e:
+            raise RuntimeError(f"can't open '{name}' ({e}); "
+                               "is the ScanSnap on with its lid open?") from None
+        self._devname = name
         if not self._checked:
             self._check_sensor()
             self._checked = True
