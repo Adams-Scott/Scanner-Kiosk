@@ -2,7 +2,6 @@
 # Install or update the Scanner Kiosk service on a Raspberry Pi.
 #
 #   ./install.sh                 install, or update after `git pull`
-#   ./install.sh --reconfigure   enter the Papra settings again
 #   ./install.sh --uninstall     stop and remove the service (keeps scans and settings)
 #
 # Run it as your normal user from the repo folder; it uses sudo where needed.
@@ -33,25 +32,10 @@ uninstall() {
     exit 0
 }
 
-ask_settings() {
-    local url org key
-    echo "Papra settings (from your Papra web page):"
-    read -rp "  Papra address, e.g. https://papra.example.com: " url
-    url=${url%/}
-    read -rp "  Organization ID (the part after /organizations/ in the address bar): " org
-    read -rsp "  API key (needs the documents:create permission; input hidden): " key
-    echo
-    [[ -n $url && -n $org && -n $key ]] || die "All three settings are required."
-    sudo install -m 600 -o root -g root /dev/null "$ENV_FILE"
-    printf 'PAPRA_URL=%s\nPAPRA_ORG_ID=%s\nPAPRA_API_KEY=%s\n' "$url" "$org" "$key" \
-        | sudo tee "$ENV_FILE" >/dev/null
-    echo "  Saved to $ENV_FILE (readable by root only)."
-}
-
 case ${1:-} in
     --uninstall) uninstall ;;
-    --reconfigure|"") ;;
-    *) die "Unknown option: $1 (use --reconfigure or --uninstall)" ;;
+    "") ;;
+    *) die "Unknown option: $1 (the only option is --uninstall)" ;;
 esac
 
 # 1. System packages ---------------------------------------------------------
@@ -92,17 +76,23 @@ step "Setting up Python packages"
 "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
 echo "Done."
 
-# 4. Papra settings ----------------------------------------------------------
-step "Papra settings"
-if [[ ${1:-} == --reconfigure ]] || ! sudo test -s "$ENV_FILE"; then
-    ask_settings
-else
-    echo "Using the existing $ENV_FILE (run with --reconfigure to change it)."
+# 4. Settings file -----------------------------------------------------------
+step "Settings ($ENV_FILE)"
+if ! sudo test -e "$ENV_FILE"; then
+    sudo install -m 600 -o root -g root "$APP_DIR/scanner-kiosk.env.example" "$ENV_FILE"
+    echo "Created it from scanner-kiosk.env.example."
 fi
-echo "Checking the connection to Papra..."
-if ! sudo env -i PATH="$PATH" bash -c "set -a; source '$ENV_FILE'; set +a; \
-        cd '$APP_DIR' && exec '$APP_DIR/.venv/bin/python' papra.py"; then
-    warn "Papra check failed. Scans will wait and upload once it works; to change the settings run ./install.sh --reconfigure"
+if sudo grep -Eq '^PAPRA_(URL|ORG_ID|API_KEY)=\s*$' "$ENV_FILE"; then
+    configured=no
+    warn "The Papra settings aren't filled in yet. Scans will wait until they are."
+else
+    configured=yes
+    echo "Checking the connection to Papra..."
+    if ! sudo env -i PATH="$PATH" bash -c "set -a; source '$ENV_FILE'; set +a; \
+            cd '$APP_DIR' && exec '$APP_DIR/.venv/bin/python' papra.py"; then
+        warn "Papra check failed. Scans will wait and upload once the settings work."
+        configured=no
+    fi
 fi
 
 # 5. Service -----------------------------------------------------------------
@@ -137,6 +127,12 @@ for _ in $(seq 1 20); do
         ip=$(hostname -I 2>/dev/null | awk '{print $1}')
         echo "Running. Open http://$(hostname).local:$PORT${ip:+ (or http://$ip:$PORT)} on your phone."
         echo "Live log: journalctl -u $SERVICE -f"
+        if [[ $configured == no ]]; then
+            echo
+            echo "Next: put your Papra details in the settings file, then restart:"
+            echo "  sudo nano $ENV_FILE"
+            echo "  sudo systemctl restart $SERVICE"
+        fi
         exit 0
     fi
     sleep 1

@@ -1,6 +1,7 @@
 """Minimal Papra REST client: check the API key and upload a document.
 
-Configuration comes from the environment (see scanner-kiosk.env.example):
+Configuration comes from the environment, loaded by systemd from
+/etc/scanner-kiosk.env (see scanner-kiosk.env.example):
   PAPRA_URL            e.g. https://papra.example.com
   PAPRA_ORG_ID         organization ID (from the Papra URL /organizations/<id>)
   PAPRA_API_KEY        API key with the documents:create permission
@@ -28,7 +29,8 @@ def _config() -> tuple[str, str, str]:
     missing = [n for n, v in (("PAPRA_URL", url), ("PAPRA_ORG_ID", org),
                               ("PAPRA_API_KEY", key)) if not v]
     if missing:
-        raise PapraError(f"Not configured: set {', '.join(missing)}", retry=False)
+        raise PapraError(f"Not set up: fill in {', '.join(missing)} in "
+                         "/etc/scanner-kiosk.env, then restart the service", retry=False)
     return url, org, key
 
 

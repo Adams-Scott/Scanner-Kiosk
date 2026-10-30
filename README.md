@@ -14,22 +14,29 @@ cd ~/Scanner-Kiosk
 ./install.sh
 ```
 
-Run it as your normal user (it asks for sudo when needed). It:
+Run it as your normal user (it asks for sudo when needed). It installs the system
+packages and Python environment, adds you to the `scanner` group, creates the
+settings file and starts the `scanner-kiosk` service. Re-running it never
+overwrites your settings.
 
-1. installs the system packages (`sane-utils` and what's needed to build `python-sane`),
-2. adds you to the `scanner` group and checks the ScanSnap is visible,
-3. creates a Python environment in `.venv` and installs `requirements.txt`,
-4. asks for your Papra address, organization ID and API key, saves them to
-   `/etc/scanner-kiosk.env` (readable by root only) and checks them,
-5. installs and starts the `scanner-kiosk` systemd service.
+### Settings
 
-It then prints the address to open on your phone, e.g. `http://pi-touch.local:8080`.
-The API key needs the `documents:create` permission.
+Put your Papra details in `/etc/scanner-kiosk.env` (readable by root only), then
+restart the service:
+
+```bash
+sudo nano /etc/scanner-kiosk.env      # PAPRA_URL, PAPRA_ORG_ID, PAPRA_API_KEY
+sudo systemctl restart scanner-kiosk
+```
+
+The API key needs the `documents:create` permission. The web page shows whether
+Papra accepted the settings; `./install.sh` also checks them. Open the page on your
+phone at `http://pi-touch.local:8080` (the installer prints the exact address).
 
 | Task | Command |
 | --- | --- |
 | Update after `git pull` | `./install.sh` |
-| Change the Papra settings | `./install.sh --reconfigure` |
+| Change the settings | `sudo nano /etc/scanner-kiosk.env`, then restart |
 | Remove the service (keeps scans and settings) | `./install.sh --uninstall` |
 | Live log | `journalctl -u scanner-kiosk -f` |
 | Restart | `sudo systemctl restart scanner-kiosk` |
