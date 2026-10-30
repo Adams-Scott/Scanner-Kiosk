@@ -2,8 +2,8 @@
 
 Press the ScanSnap's Scan button -> scan -> drop blank pages -> PDF -> upload
 to Papra. A small web page (for a phone) shows the scanner status and recent
-scans, retries failed uploads, starts scans in other modes, and sets what the
-button does.
+scans, retries failed uploads, and starts scans with other settings (paper
+size, sides, color, blank removal).
 
     python3 kiosk.py            # then open http://<pi-address>:8080
 
@@ -39,7 +39,14 @@ LIST_JOBS = 30            # scans shown on the web page
 RETRY_DELAYS = [30, 60, 120, 300, 900]   # seconds between automatic upload retries
 PAPRA_CHECK_EVERY = 600   # seconds between Papra connection checks
 
-PUBLIC_FIELDS = ("id", "created", "preset", "source", "status", "pages",
+LEGACY_LABELS = {
+    "bw_double": "B&W · Double-sided · Blanks removed",
+    "bw_single": "B&W · Single-sided",
+    "color_double": "Color · Double-sided · Blanks removed",
+    "color_single": "Color · Single-sided",
+}
+
+PUBLIC_FIELDS = ("id", "created", "label", "source", "status", "pages",
                  "blanks", "error", "attempts", "next_try", "uploaded", "name")
 
 
@@ -67,6 +74,8 @@ class Jobs:
                 job.update(status="scan_failed", error="Interrupted by a restart")
             elif job["status"] == "uploading":
                 job.update(status="pending", next_try=0)
+            # Scans saved before scan settings existed have a "preset" instead.
+            job.setdefault("label", LEGACY_LABELS.get(job.get("preset"), ""))
             self.jobs[job["id"]] = job
             self._save(job)
 
@@ -77,13 +86,14 @@ class Jobs:
         tmp.write_text(json.dumps(job, indent=1))
         tmp.replace(d / "job.json")
 
-    def new(self, preset: str, source: str) -> dict:
+    def new(self, settings: dict, source: str) -> dict:
         now = time.time()
         stamp = datetime.fromtimestamp(now)
         job = dict(
             id=stamp.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4],
             name=stamp.strftime("Scan %Y-%m-%d %H-%M-%S") + ".pdf",
-            created=now, preset=preset, source=source, status="scanning",
+            created=now, settings=settings, label=scanner.describe(settings),
+            source=source, status="scanning",
             pages=0, blanks=0, error=None, attempts=0, next_try=0,
             uploaded=None, document_id=None,
         )
@@ -139,12 +149,6 @@ class Jobs:
 class Kiosk:
     def __init__(self):
         self.jobs = Jobs(DATA / "jobs")
-        self.settings_file = DATA / "settings.json"
-        self.settings = {"button_preset": button.BUTTON_PRESET}
-        try:
-            self.settings.update(json.loads(self.settings_file.read_text()))
-        except (OSError, ValueError):
-            pass
         self.activity: str | None = None
         self.scan_lock = threading.Lock()          # one scan at a time
         self.wake_uploader = threading.Event()
@@ -155,37 +159,37 @@ class Kiosk:
     # scanning
     def _button_pressed(self):
         # Runs on the watcher thread, which has already released the scanner.
-        self._scan(self.settings["button_preset"], "button")
+        self._scan(scanner.BUTTON_SETTINGS, "button")
 
-    def scan_from_web(self, preset: str) -> bool:
+    def scan_from_web(self, settings: dict) -> bool:
         if self.scan_lock.locked():
             return False
 
         def run():
             with self.watcher.released():          # waits for a button scan to finish
-                self._scan(preset, "web")
+                self._scan(settings, "web")
         threading.Thread(target=run, name="web-scan", daemon=True).start()
         return True
 
-    def _scan(self, preset: str, source: str):
+    def _scan(self, settings: dict, source: str):
         if not self.scan_lock.acquire(blocking=False):
             log.info("Already scanning; ignoring the %s request", source)
             return
-        job = self.jobs.new(preset, source)
+        job = self.jobs.new(settings, source)
         jid = job["id"]
-        self.activity = f"Scanning ({scanner.LABELS[preset]})"
-        log.info("Scan %s started from the %s (%s)", jid, source, preset)
+        self.activity = f"Scanning: {job['label']}"
+        log.info("Scan %s started from the %s (%s)", jid, source, job["label"])
         try:
             folder = DATA / "jobs" / jid
             pages_dir = folder / "pages"
             try:
-                _, pages = scanner.scan(preset, pages_dir)
+                _, pages = scanner.scan(settings, pages_dir)
             except scanner.ScanError as e:
                 self.jobs.update(jid, status="scan_failed", error=_scan_error(str(e)))
                 log.warning("Scan %s failed: %s", jid, e)
                 return
             blanks = len(list((pages_dir / "blank").glob("*.png")))
-            scanner.build_pdf(pages_dir, pages, preset).replace(self.jobs.pdf(jid))
+            scanner.build_pdf(pages_dir, pages, settings).replace(self.jobs.pdf(jid))
             shutil.rmtree(pages_dir, ignore_errors=True)
             self.jobs.update(jid, status="pending", pages=len(pages), blanks=blanks)
             log.info("Scan %s: %d page(s), %d blank removed", jid, len(pages), blanks)
@@ -260,19 +264,14 @@ class Kiosk:
             self.check_papra_now.clear()
 
     # settings & status
-    def set_button_preset(self, preset: str):
-        self.settings["button_preset"] = preset
-        self.settings_file.write_text(json.dumps(self.settings))
-        log.info("Scan button now does: %s", preset)
-
     def status(self) -> dict:
         jobs = self.jobs.recent(LIST_JOBS)
         uploading = any(j["status"] == "uploading" for j in jobs)
         return {
             "scanner": self.watcher.state(),
             "activity": self.activity or ("Uploading…" if uploading else None),
-            "button_preset": self.settings["button_preset"],
-            "presets": [{"id": k, "label": v} for k, v in scanner.LABELS.items()],
+            "button": scanner.describe(scanner.BUTTON_SETTINGS),
+            "sizes": [{"id": k, "label": v[0]} for k, v in scanner.PAPER_SIZES.items()],
             "papra": self.papra_state,
             "jobs": [{k: j.get(k) for k in PUBLIC_FIELDS} | {
                         "has_pdf": self.jobs.pdf(j["id"]).exists()} for j in jobs],
@@ -353,19 +352,14 @@ def make_handler(kiosk: Kiosk):
         def do_POST(self):
             path, body = self.path.split("?")[0], self._body()
             if path == "/api/scan":
-                preset = body.get("preset")
-                if preset not in scanner.PRESETS:
-                    return self._json({"error": "Unknown scan mode"}, HTTPStatus.BAD_REQUEST)
+                try:
+                    settings = scanner.validate(body)
+                except ValueError as e:
+                    return self._json({"error": str(e)}, HTTPStatus.BAD_REQUEST)
                 if not kiosk.watcher.state()["online"]:
                     return self._json({"error": "Scanner is offline"}, HTTPStatus.CONFLICT)
-                if not kiosk.scan_from_web(preset):
+                if not kiosk.scan_from_web(settings):
                     return self._json({"error": "Already scanning"}, HTTPStatus.CONFLICT)
-                return self._json({"ok": True})
-            if path == "/api/settings":
-                preset = body.get("button_preset")
-                if preset not in scanner.PRESETS:
-                    return self._json({"error": "Unknown scan mode"}, HTTPStatus.BAD_REQUEST)
-                kiosk.set_button_preset(preset)
                 return self._json({"ok": True})
             if path == "/api/retry":
                 return self._json({"queued": kiosk.retry(body.get("id"))})

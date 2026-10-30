@@ -3,8 +3,7 @@
 A Raspberry Pi service for a Fujitsu ScanSnap S1500. Press the scanner's own
 **Scan** button and it scans, drops blank pages, makes a PDF and uploads it to
 [Papra](https://papra.app). A small web page, built for a phone, shows what's
-happening and lets you retry uploads, scan in other modes, and choose what the
-button does.
+happening, lets you retry uploads, and starts scans with other settings.
 
 ## Install (Raspberry Pi)
 
@@ -43,9 +42,14 @@ phone at `http://pi-touch.local:8080` (the installer prints the exact address).
 
 ## How it works
 
-- **Scan button**: `button.py` polls the scanner's `scan` sensor. A press runs the
-  mode chosen on the web page (black & white double-sided by default).
-- **Scan**: `scanner.py` runs `scanimage`. Double-sided modes drop blank pages.
+- **Scan button**: `button.py` polls the scanner's `scan` sensor. A press always
+  scans Letter (8.5 × 11 in), black & white, double-sided, with blank pages removed
+  (`BUTTON_SETTINGS` in `scanner.py`).
+- **Scan from the phone**: pick the paper size (or automatic size detection),
+  single- or double-sided, color or black & white, and whether to remove blank
+  pages. The phone remembers your last choices.
+- **Scan**: `scanner.py` runs `scanimage`. Automatic size scans a Legal-size area
+  and crops each page to its edges. B&W scans at 300 dpi, color at 200 dpi.
 - **Upload**: `kiosk.py` uploads each PDF to Papra, named `Scan YYYY-MM-DD HH-MM-SS.pdf`.
   If Papra can't be reached the upload is retried automatically (after 30 s,
   then up to every 15 min) and survives restarts. If Papra rejects the upload
@@ -63,7 +67,8 @@ Stop the service first (`sudo systemctl stop scanner-kiosk`): only one program
 can use the scanner at a time.
 
 ```bash
-python3 scanner.py bw_double     # one scan into /tmp/scan (no upload)
+python3 scanner.py               # one scan like the button, into /tmp/scan (no upload)
+python3 scanner.py --help        # options: --size, --auto-size, --color, --single, --keep-blank
 python3 button.py --debug        # watch the button and sensors
 python3 buttontest.py            # compare ways of detecting the button
 ```
@@ -73,6 +78,7 @@ If blank pages are wrongly dropped or kept, check the numbers and adjust
 
 ```bash
 python3 scanner.py --ink /tmp/scan/<job>/page*.png /tmp/scan/<job>/blank/*.png
+# color scans are 200 dpi: add --dpi 200
 ```
 
 "Scanner unavailable ... Device busy" means another program (for example

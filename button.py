@@ -21,7 +21,6 @@ import scanner
 
 log = logging.getLogger("button")
 
-BUTTON_PRESET = "bw_double"   # what a button press scans
 POLL_INTERVAL = 0.1           # seconds between sensor reads
 RETRY_DELAY = 3               # seconds between reopen attempts when offline
 BUTTON_SENSOR = "scan"        # fujitsu driver's name for the Scan button
@@ -229,18 +228,17 @@ class ButtonWatcher:
         self._stop.set()
 
 
-def scan_bw_double():
-    job, pages = scanner.scan(BUTTON_PRESET)
-    pdf = scanner.build_pdf(job, pages, BUTTON_PRESET)
+def scan_button_settings():
+    job, pages = scanner.scan(scanner.BUTTON_SETTINGS)
+    pdf = scanner.build_pdf(job, pages, scanner.BUTTON_SETTINGS)
     log.info("Scanned %d page(s) -> %s", len(pages), pdf)
-    # TODO: hand `pdf` to the touch UI preview (accept / rescan) once it exists.
     return pdf
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     log.info("Waiting for the Scan button (Ctrl+C to quit)")
-    watcher = ButtonWatcher(scan_bw_double, debug="--debug" in sys.argv[1:])
+    watcher = ButtonWatcher(scan_button_settings, debug="--debug" in sys.argv[1:])
     try:
         watcher.run()
     except KeyboardInterrupt:

@@ -45,14 +45,23 @@
   .line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; min-width: 0; }
   .line span:last-child { overflow-wrap: anywhere; }
 
-  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .opt { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink);
-         border-radius: 12px; padding: 12px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; min-height: 52px; }
-  .opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
-  .opt small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 2px; }
-  .scan { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
-  .scan small { color: inherit; opacity: .8; }
-  .scan:disabled { opacity: .45; cursor: default; }
+  .form { display: grid; gap: 16px; }
+  .field { display: grid; gap: 6px; }
+  .field > span { font-size: 14px; font-weight: 600; }
+  select { appearance: none; width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--bg);
+           border: 1px solid var(--line); border-radius: 10px; padding: 11px 36px 11px 12px; min-height: 46px;
+           background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+           background-position: right 18px center, right 13px center; background-size: 5px 5px; background-repeat: no-repeat; }
+  select:disabled { opacity: .45; }
+  .toggle { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
+  .toggle button { appearance: none; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 15px;
+                   padding: 9px; border-radius: 8px; cursor: pointer; min-height: 40px; }
+  .toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
+  .check { display: flex; align-items: center; gap: 12px; font-size: 15px; cursor: pointer; min-height: 32px; }
+  .check input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); flex: none; }
+  .primary { appearance: none; border: 0; background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 17px;
+             font-weight: 650; border-radius: 12px; padding: 14px; cursor: pointer; min-height: 52px; }
+  .primary:disabled { opacity: .45; cursor: default; }
   .hint { color: var(--muted); font-size: 13px; margin: 8px 4px 0; }
 
   .jobs { display: grid; gap: 8px; }
@@ -88,12 +97,21 @@
     <div class="line"><span class="dot" id="scanner-dot"></span><span id="scanner-msg">Scanner</span></div>
     <div class="line"><span class="dot" id="papra-dot"></span><span id="papra-msg">Papra</span></div>
   </section>
+  <p class="hint" id="button-info"></p>
 
-  <h2>Scan button does</h2>
-  <div class="seg" id="button-presets"></div>
-
-  <h2>Scan now from this phone</h2>
-  <div class="seg" id="scan-presets"></div>
+  <h2>Scan from this phone</h2>
+  <form class="card form" id="scan-form">
+    <label class="field"><span>Paper size</span><select id="size"></select></label>
+    <label class="check"><input type="checkbox" id="auto_size"> Detect paper size automatically</label>
+    <div class="field"><span>Sides</span>
+      <div class="toggle" data-name="duplex"><button type="button" data-v="0">Single-sided</button><button type="button" data-v="1">Double-sided</button></div>
+    </div>
+    <div class="field"><span>Color</span>
+      <div class="toggle" data-name="color"><button type="button" data-v="0">Black &amp; white</button><button type="button" data-v="1">Color</button></div>
+    </div>
+    <label class="check"><input type="checkbox" id="skip_blank"> Remove blank pages</label>
+    <button class="primary" id="scan-btn" type="submit">Scan</button>
+  </form>
   <p class="hint">Load the paper first. Scans upload to Papra automatically.</p>
 
   <div class="row"><h2>Recent scans</h2><button class="link" id="retry-all" hidden>Retry failed</button></div>
@@ -144,40 +162,55 @@ function chip(job, now) {
   return [job.status, ""];
 }
 
-function presetButtons(el, presets, isOn, onTap, cls) {
-  el.innerHTML = "";
-  for (const p of presets) {
-    const b = document.createElement("button");
-    const [mode, sides] = p.label.split(", ");
-    b.className = "opt" + (cls ? " " + cls : "");
-    b.innerHTML = `${mode}<small>${sides}</small>`;
-    b.dataset.id = p.id;
-    if (isOn) b.setAttribute("aria-pressed", isOn(p.id));
-    b.onclick = () => onTap(p.id, b);
-    el.appendChild(b);
-  }
+// Scan form. Defaults match the Scan button; this phone remembers its last choices.
+const DEFAULTS = { size: "letter", auto_size: false, duplex: true, color: false, skip_blank: true };
+let form = { ...DEFAULTS };
+try { form = { ...DEFAULTS, ...JSON.parse(localStorage.getItem("scanForm") || "{}") }; } catch (e) {}
+let formReady = false;
+
+function saveForm() { try { localStorage.setItem("scanForm", JSON.stringify(form)); } catch (e) {} }
+
+function showForm() {
+  $("size").value = form.size;
+  $("size").disabled = form.auto_size;
+  $("auto_size").checked = form.auto_size;
+  $("skip_blank").checked = form.skip_blank;
+  for (const t of document.querySelectorAll(".toggle"))
+    for (const b of t.children) b.setAttribute("aria-pressed", String(form[t.dataset.name] === (b.dataset.v === "1")));
+}
+
+function setupForm(sizes) {
+  for (const z of sizes) $("size").add(new Option(z.label, z.id));
+  if (!sizes.some(z => z.id === form.size)) form.size = DEFAULTS.size;
+  $("size").onchange = () => { form.size = $("size").value; saveForm(); };
+  $("auto_size").onchange = () => { form.auto_size = $("auto_size").checked; saveForm(); showForm(); };
+  $("skip_blank").onchange = () => { form.skip_blank = $("skip_blank").checked; saveForm(); };
+  for (const t of document.querySelectorAll(".toggle"))
+    for (const b of t.children) b.onclick = () => { form[t.dataset.name] = b.dataset.v === "1"; saveForm(); showForm(); };
+  $("scan-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    $("scan-btn").disabled = true;
+    try { await api("/api/scan", form); toast("Scanning…"); refresh(); }
+    catch (e) { toast(e.message); $("scan-btn").disabled = false; }
+  };
+  showForm();
+  formReady = true;
 }
 
 function render(s) {
   const busy = s.activity, online = s.scanner.online;
   $("pill-dot").className = "dot " + (busy ? "busy" : online ? "ok" : "bad");
   $("pill-text").textContent = busy ? (busy.startsWith("Scan") ? "Scanning" : "Uploading") : online ? "Ready" : "Offline";
-  const label = s.presets.find(p => p.id === s.button_preset)?.label || s.button_preset;
-  $("hero").textContent = busy || (online ? `Press Scan for ${label.replace(", ", " ")}` : "Scanner offline");
+  $("hero").textContent = busy || (online ? "Ready: press Scan on the scanner" : "Scanner offline");
+  $("button-info").textContent = `The Scan button scans ${s.button}.`;
   $("scanner-dot").className = "dot " + (online ? "ok" : "bad");
   $("scanner-msg").textContent = online ? "Scanner connected" : s.scanner.message;
   $("papra-dot").className = "dot " + (s.papra.ok ? "ok" : s.papra.ok === false ? "bad" : "");
   $("papra-msg").textContent = s.papra.ok ? "Papra connected" : s.papra.ok === false ? s.papra.message : "Checking Papra…";
 
-  presetButtons($("button-presets"), s.presets, id => id === s.button_preset, async (id) => {
-    try { await api("/api/settings", { button_preset: id }); refresh(); } catch (e) { toast(e.message); }
-  });
-  presetButtons($("scan-presets"), s.presets, null, async (id, b) => {
-    b.disabled = true;
-    try { await api("/api/scan", { preset: id }); toast("Scanning…"); refresh(); }
-    catch (e) { toast(e.message); b.disabled = false; }
-  }, "scan");
-  for (const b of $("scan-presets").children) b.disabled = !!busy || !online;
+  if (!formReady) setupForm(s.sizes);
+  $("scan-btn").disabled = !!busy || !online;
+  $("scan-btn").textContent = busy && busy.startsWith("Scan") ? "Scanning…" : "Scan";
 
   const jobs = $("jobs");
   if (!s.jobs.length) { jobs.innerHTML = '<div class="empty">No scans yet</div>'; }
@@ -185,11 +218,11 @@ function render(s) {
     jobs.innerHTML = "";
     for (const j of s.jobs) {
       const [text, cls] = chip(j, s.now);
-      const preset = (s.presets.find(p => p.id === j.preset)?.label || j.preset).replace(", ", " ");
       const bits = [];
       if (j.pages) bits.push(`${j.pages} page${j.pages === 1 ? "" : "s"}`);
       if (j.blanks) bits.push(`${j.blanks} blank removed`);
-      bits.push(preset, j.source === "button" ? "Scan button" : "Phone");
+      if (j.label) bits.push(j.label.replace(" · Blanks removed", ""));
+      bits.push(j.source === "button" ? "Scan button" : "Phone");
       const el = document.createElement("div");
       el.className = "card job";
       el.innerHTML = `<div class="top"><span class="when"></span><span class="chip ${cls}"></span></div>
