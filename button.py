@@ -8,6 +8,7 @@ scan, then reopens and goes back to polling.
 Run on its own to test:   python3 button.py
 Show every sensor change:  python3 button.py --debug
 """
+import faulthandler
 import logging
 import sys
 import threading
@@ -40,6 +41,8 @@ class ButtonWatcher:
         self._last_sensors = None
         self._polls, self._poll_time, self._beat = 0, 0.0, time.monotonic()
         self._checked = False
+        self._last_tick = time.monotonic()   # for the --debug stall watchdog
+        self._scanning = False
 
     # -- device handling ------------------------------------------------
     def _find(self) -> str:
@@ -58,8 +61,11 @@ class ButtonWatcher:
         if not self._checked:
             self._check_sensor()
             self._checked = True
-        # A button already held at open time must not count as a press.
-        self._prev = self._sensor(BUTTON_SENSOR)
+        # Not read here: the S1500 reports a press as a brief blip, and a read
+        # at open time would swallow a press made while the scanner was
+        # being opened.
+        self._prev = False
+        self._polls, self._poll_time, self._beat = 0, 0.0, time.monotonic()
         if self._offline_msg:
             log.info("Scanner back online")
         self._offline_msg = None
@@ -78,10 +84,15 @@ class ButtonWatcher:
                       "can't be detected. Run with --debug and press the button "
                       "to see whether another sensor changes.", BUTTON_SENSOR)
 
-    def _dump_sensors(self):
-        t0 = time.monotonic()
+    def _dump_sensors(self, pressed: bool, t0: float):
+        # Called right after the "scan" read, which fetched fresh hardware
+        # status; the other sensors come from that same fetch, so this adds
+        # no extra scanner traffic that could swallow a press.
         vals = {}
         for n in self._sensor_names():
+            if n == BUTTON_SENSOR:
+                vals[n] = int(pressed)
+                continue
             try:
                 vals[n] = self._dev.dev.get_option(self._dev.opt[n].index)
             except Exception as e:
@@ -133,9 +144,10 @@ class ButtonWatcher:
                 if self._dev is None:
                     self._open()
                     return self._interval
+                t0 = time.monotonic()
+                pressed = self._sensor(BUTTON_SENSOR)   # exactly one read per tick
                 if self._debug:
-                    self._dump_sensors()
-                pressed = self._sensor(BUTTON_SENSOR)
+                    self._dump_sensors(pressed, t0)
                 fire = pressed and not self._prev
                 self._prev = pressed
             except Exception as e:
@@ -150,20 +162,41 @@ class ButtonWatcher:
             if fire:
                 log.info("Scan button pressed")
                 self._close()
+                self._scanning = True
                 try:
                     self._on_press()
                 except scanner.ScanError as e:
                     log.warning("Scan failed: %s", e)
                 except Exception:
                     log.exception("Button-triggered scan failed")
+                finally:
+                    self._scanning = False
                 # Device reopens on the next tick.
         return self._interval
 
+    def _watchdog(self):
+        """--debug only: if a poll hangs, print where every thread is stuck."""
+        reported = False
+        while not self._stop.wait(1):
+            stuck = time.monotonic() - self._last_tick
+            # Skip while opening (device discovery alone can take ~7 s).
+            if stuck > 3 and not self._scanning and self._dev is not None:
+                if not reported:
+                    log.error("Polling has been stuck for %.0f s; stack traces follow", stuck)
+                    faulthandler.dump_traceback(all_threads=True)
+                    reported = True
+            else:
+                reported = False
+
     def run(self):
         sane.init()
+        if self._debug:
+            threading.Thread(target=self._watchdog, daemon=True).start()
         try:
             while not self._stop.is_set():
-                self._stop.wait(self._tick())
+                delay = self._tick()
+                self._last_tick = time.monotonic()
+                self._stop.wait(delay)
         finally:
             with self._lock:
                 self._close()
