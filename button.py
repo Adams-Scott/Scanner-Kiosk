@@ -38,6 +38,7 @@ class ButtonWatcher:
         self._offline_msg = None
         self._debug = debug
         self._last_sensors = None
+        self._polls, self._poll_time, self._beat = 0, 0.0, time.monotonic()
         self._checked = False
 
     # -- device handling ------------------------------------------------
@@ -78,6 +79,7 @@ class ButtonWatcher:
                       "to see whether another sensor changes.", BUTTON_SENSOR)
 
     def _dump_sensors(self):
+        t0 = time.monotonic()
         vals = {}
         for n in self._sensor_names():
             try:
@@ -87,6 +89,14 @@ class ButtonWatcher:
         if vals != self._last_sensors:
             log.info("sensors: %s", "  ".join(f"{k}={v}" for k, v in vals.items()))
             self._last_sensors = vals
+        # Heartbeat: proves polling is still running even when nothing changes.
+        self._polls += 1
+        self._poll_time += time.monotonic() - t0
+        if time.monotonic() - self._beat >= 5:
+            log.info("still polling: %d reads in the last 5 s, %.0f ms each, scan=%s",
+                     self._polls, 1000 * self._poll_time / self._polls,
+                     vals.get(BUTTON_SENSOR))
+            self._polls, self._poll_time, self._beat = 0, 0.0, time.monotonic()
 
     def _close(self):
         if self._dev is not None:
