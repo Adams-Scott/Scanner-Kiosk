@@ -1,0 +1,20 @@
+services:
+  scanner-kiosk:
+    build: .
+    image: scanner-kiosk
+    container_name: scanner-kiosk
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8080:8080"
+    env_file: scanner-kiosk.env      # Papra URL, organization ID and API key
+    environment:
+      TZ: America/Los_Angeles        # scan names use this time zone
+    volumes:
+      - ./data:/data                 # scans and uploads waiting to be sent
+      # The whole USB bus rather than one device: the ScanSnap gets a new
+      # device node every time it powers on (lid opened), and a single
+      # --device mapping would go stale.
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - "c 189:* rmw"                # allow access to USB devices (major 189)
