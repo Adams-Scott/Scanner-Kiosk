@@ -67,3 +67,12 @@ def upload(pdf: Path, filename: str) -> str:
         r = _request("POST", f"/api/organizations/{org}/documents",
                      files={"file": (filename, f, "application/pdf")})
     return r.json().get("document", {}).get("id", "")
+
+
+if __name__ == "__main__":
+    # `python papra.py` checks the settings in the environment (used by install.sh).
+    import sys
+    try:
+        print(f"  OK: Papra accepted {check()}")
+    except PapraError as e:
+        sys.exit(f"  {e}")

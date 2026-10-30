@@ -6,46 +6,33 @@ A Raspberry Pi service for a Fujitsu ScanSnap S1500. Press the scanner's own
 happening and lets you retry uploads, scan in other modes, and choose what the
 button does.
 
-## Setup (Raspberry Pi)
+## Install (Raspberry Pi)
 
 ```bash
-sudo apt install sane-utils libsane-dev python3-dev build-essential python3-venv
-scanimage -L        # should list the ScanSnap S1500
+git clone https://github.com/Adams-Scott/Scanner-Kiosk.git ~/Scanner-Kiosk
 cd ~/Scanner-Kiosk
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+./install.sh
 ```
 
-### Papra settings
+Run it as your normal user (it asks for sudo when needed). It:
 
-```bash
-sudo cp scanner-kiosk.env.example /etc/scanner-kiosk.env
-sudo nano /etc/scanner-kiosk.env      # PAPRA_URL, PAPRA_ORG_ID, PAPRA_API_KEY
-sudo chmod 600 /etc/scanner-kiosk.env
-```
+1. installs the system packages (`sane-utils` and what's needed to build `python-sane`),
+2. adds you to the `scanner` group and checks the ScanSnap is visible,
+3. creates a Python environment in `.venv` and installs `requirements.txt`,
+4. asks for your Papra address, organization ID and API key, saves them to
+   `/etc/scanner-kiosk.env` (readable by root only) and checks them,
+5. installs and starts the `scanner-kiosk` systemd service.
 
-The API key needs the `documents:create` permission. Never commit the real file.
+It then prints the address to open on your phone, e.g. `http://pi-touch.local:8080`.
+The API key needs the `documents:create` permission.
 
-### Try it in the foreground
-
-```bash
-set -a; source <(sudo cat /etc/scanner-kiosk.env); set +a
-python3 kiosk.py
-```
-
-Open `http://pi-touch.local:8080` (or the Pi's IP address) on your phone.
-
-### Run it as a service
-
-```bash
-sudo cp scanner-kiosk.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now scanner-kiosk
-journalctl -u scanner-kiosk -f        # live log
-```
-
-The service file assumes user `scott` and the repo at `~/Scanner-Kiosk`; edit it if
-either differs.
+| Task | Command |
+| --- | --- |
+| Update after `git pull` | `./install.sh` |
+| Change the Papra settings | `./install.sh --reconfigure` |
+| Remove the service (keeps scans and settings) | `./install.sh --uninstall` |
+| Live log | `journalctl -u scanner-kiosk -f` |
+| Restart | `sudo systemctl restart scanner-kiosk` |
 
 ## How it works
 
