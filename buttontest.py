@@ -1,11 +1,15 @@
 """Find which way of polling sees the ScanSnap's Scan button.
 
-Runs four 15-second rounds. Press the Scan button 3 times during each round
+Each round lasts 15 seconds. Press the Scan button 3 times during each round
 (paper loaded), then paste the whole output.
 
-    python3 buttontest.py
+    python3 buttontest.py          # rounds A-D
+    python3 buttontest.py E F      # only the named rounds
 """
+import logging
 import subprocess
+import sys
+import threading
 import time
 
 import sane
@@ -69,7 +73,31 @@ def round_scanimage(devname, interval):
     return hits, reads
 
 
+def round_watcher(devname, debug):
+    """The real ButtonWatcher from button.py, with the scan replaced by a print."""
+    import button
+    hits = []
+    w = button.ButtonWatcher(lambda: (hits.append(1), print(
+        f"    FIRED at {time.strftime('%H:%M:%S')}", flush=True)), debug=debug)
+    w._devname = devname
+    reads = [0]
+    real = w._sensor
+    def counting(name, default=False):
+        reads[0] += 1
+        return real(name, default)
+    w._sensor = counting
+    sane.exit()                 # ButtonWatcher.run() does its own init/exit
+    t = threading.Thread(target=w.run, daemon=True)
+    t.start()
+    time.sleep(ROUND)
+    w.stop()
+    t.join()
+    sane.init()
+    return len(hits), reads[0]
+
+
 def main():
+    logging.basicConfig(level=logging.INFO, format="    %(name)s: %(message)s")
     sane.init()
     devname = next(d[0] for d in sane.get_devices() if d[0].startswith("fujitsu"))
     print(f"Using {devname}\n")
@@ -78,7 +106,11 @@ def main():
         ("B: stay open, check every 0.5 s", round_open, 0.5),
         ("C: reopen for every check", round_reopen, 0.2),
         ("D: scanimage -A loop (control)", round_scanimage, 0.2),
+        ("E: button.py watcher", round_watcher, False),
+        ("F: button.py watcher --debug", round_watcher, True),
     ]
+    picked = {a.upper() for a in sys.argv[1:]}
+    rounds = [r for r in rounds if r[0][0] in picked] if picked else rounds[:4]
     results = []
     for label, fn, interval in rounds:
         print(f"Round {label}")
