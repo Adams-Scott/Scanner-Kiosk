@@ -1,7 +1,7 @@
 """Scanner Kiosk service.
 
 Press the ScanSnap's Scan button -> scan -> drop blank pages -> PDF -> upload
-to Papra. A small web page (for a phone) shows the scanner status and recent
+to Paperless-ngx. A small web page (for a phone) shows the scanner status and recent
 scans, retries failed uploads, and starts scans with other settings (paper
 size, sides, color, blank removal).
 
@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import button
-import papra
+import paperless
 import scanner
 
 log = logging.getLogger("kiosk")
@@ -37,7 +37,7 @@ KEEP_FAILED_DAYS = 2      # failed scans (nothing to upload) are listed this lon
 MAX_JOBS = 100            # hard cap on stored scans
 LIST_JOBS = 30            # scans shown on the web page
 RETRY_DELAYS = [30, 60, 120, 300, 900]   # seconds between automatic upload retries
-PAPRA_CHECK_EVERY = 600   # seconds between Papra connection checks
+PAPERLESS_CHECK_EVERY = 600   # seconds between Paperless connection checks
 
 LEGACY_LABELS = {
     "bw_double": "B&W · Double-sided · Blanks removed",
@@ -152,8 +152,8 @@ class Kiosk:
         self.activity: str | None = None
         self.scan_lock = threading.Lock()          # one scan at a time
         self.wake_uploader = threading.Event()
-        self.check_papra_now = threading.Event()
-        self.papra_state = {"ok": None, "message": "Checking…"}
+        self.check_paperless_now = threading.Event()
+        self.paperless_state = {"ok": None, "message": "Checking…"}
         self.watcher = button.ButtonWatcher(self._button_pressed)
 
     # scanning
@@ -214,10 +214,10 @@ class Kiosk:
         jid = job["id"]
         self.jobs.update(jid, status="uploading")
         try:
-            doc_id = papra.upload(self.jobs.pdf(jid), job["name"])
+            doc_id = paperless.upload(self.jobs.pdf(jid), job["name"])
         except Exception as e:
-            retry = e.retry if isinstance(e, papra.PapraError) else True
-            if not isinstance(e, papra.PapraError):
+            retry = e.retry if isinstance(e, paperless.PaperlessError) else True
+            if not isinstance(e, paperless.PaperlessError):
                 log.exception("Upload %s crashed", jid)
             attempts = job["attempts"] + 1
             if retry:
@@ -226,14 +226,14 @@ class Kiosk:
                                  attempts=attempts, next_try=time.time() + delay)
             else:
                 self.jobs.update(jid, status="failed", error=str(e), attempts=attempts)
-            self.papra_state = {"ok": False, "message": str(e)}
+            self.paperless_state = {"ok": False, "message": str(e)}
             log.warning("Upload %s failed (%s): %s", jid,
                         "will retry" if retry else "needs a manual retry", e)
             return
         self.jobs.update(jid, status="uploaded", document_id=doc_id,
                          uploaded=time.time(), error=None, next_try=0)
-        if not self.papra_state["ok"]:
-            self.check_papra_now.set()
+        if not self.paperless_state["ok"]:
+            self.check_paperless_now.set()
         log.info("Uploaded %s as %s", jid, job["name"])
 
     def retry(self, job_id: str | None) -> int:
@@ -247,21 +247,21 @@ class Kiosk:
         self.wake_uploader.set()
         return n
 
-    def _papra_checker(self):
+    def _paperless_checker(self):
         while True:
-            was_ok = self.papra_state["ok"]
+            was_ok = self.paperless_state["ok"]
             try:
-                self.papra_state = {"ok": True, "message": f"Connected ({papra.check()})"}
+                self.paperless_state = {"ok": True, "message": f"Connected ({paperless.check()})"}
                 if not was_ok:
-                    # Papra just became reachable (or the service just
+                    # Paperless just became reachable (or the service just
                     # started): give uploads that gave up one more try.
                     self.retry(None)
-            except papra.PapraError as e:
-                self.papra_state = {"ok": False, "message": str(e)}
+            except paperless.PaperlessError as e:
+                self.paperless_state = {"ok": False, "message": str(e)}
             except Exception as e:
-                self.papra_state = {"ok": False, "message": f"Check failed: {e}"}
-            self.check_papra_now.wait(timeout=PAPRA_CHECK_EVERY)
-            self.check_papra_now.clear()
+                self.paperless_state = {"ok": False, "message": f"Check failed: {e}"}
+            self.check_paperless_now.wait(timeout=PAPERLESS_CHECK_EVERY)
+            self.check_paperless_now.clear()
 
     # settings & status
     def status(self) -> dict:
@@ -272,7 +272,7 @@ class Kiosk:
             "activity": self.activity or ("Uploading…" if uploading else None),
             "button": scanner.describe(scanner.BUTTON_SETTINGS),
             "sizes": [{"id": k, "label": v[0]} for k, v in scanner.PAPER_SIZES.items()],
-            "papra": self.papra_state,
+            "paperless": self.paperless_state,
             "jobs": [{k: j.get(k) for k in PUBLIC_FIELDS} | {
                         "has_pdf": self.jobs.pdf(j["id"]).exists()} for j in jobs],
             "now": time.time(),
@@ -281,7 +281,7 @@ class Kiosk:
     def start(self):
         self.watcher.start()
         threading.Thread(target=self._uploader, name="uploader", daemon=True).start()
-        threading.Thread(target=self._papra_checker, name="papra-check", daemon=True).start()
+        threading.Thread(target=self._paperless_checker, name="paperless-check", daemon=True).start()
 
 
 def _scan_error(msg: str) -> str:
@@ -363,8 +363,8 @@ def make_handler(kiosk: Kiosk):
                 return self._json({"ok": True})
             if path == "/api/retry":
                 return self._json({"queued": kiosk.retry(body.get("id"))})
-            if path == "/api/papra/check":
-                kiosk.check_papra_now.set()
+            if path == "/api/paperless/check":
+                kiosk.check_paperless_now.set()
                 return self._json({"ok": True})
             self._json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
 

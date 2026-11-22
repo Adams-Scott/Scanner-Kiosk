@@ -2,7 +2,7 @@
 
 A Raspberry Pi service for a Fujitsu ScanSnap S1500. Press the scanner's own
 **Scan** button and it scans, drops blank pages, makes a PDF and uploads it to
-[Papra](https://papra.app). A small web page, built for a phone, shows what's
+[Paperless-ngx](https://docs.paperless-ngx.com). A small web page, built for a phone, shows what's
 happening, lets you retry uploads, and starts scans with other settings.
 
 ## Install (Raspberry Pi)
@@ -20,16 +20,17 @@ overwrites your settings.
 
 ### Settings
 
-Put your Papra details in `/etc/scanner-kiosk.env` (readable by root only), then
+Put your Paperless-ngx details in `/etc/scanner-kiosk.env` (readable by root only), then
 restart the service:
 
 ```bash
-sudo nano /etc/scanner-kiosk.env      # PAPRA_URL, PAPRA_ORG_ID, PAPRA_API_KEY
+sudo nano /etc/scanner-kiosk.env      # PAPERLESS_URL, PAPERLESS_TOKEN
 sudo systemctl restart scanner-kiosk
 ```
 
-The API key needs the `documents:create` permission. The web page shows whether
-Papra accepted the settings; `./install.sh` also checks them. Open the page on your
+Get the token from Paperless under your user menu > **My Profile** > **API Auth
+Token**. The token's user needs permission to add documents. The web page shows
+whether Paperless accepted the settings; `./install.sh` also checks them. Open the page on your
 phone at `http://pi-touch.local:8080` (the installer prints the exact address).
 
 | Task | Command |
@@ -50,11 +51,13 @@ phone at `http://pi-touch.local:8080` (the installer prints the exact address).
   pages. The phone remembers your last choices.
 - **Scan**: `scanner.py` runs `scanimage`. Automatic size scans a Legal-size area
   and crops each page to its edges. B&W scans at 300 dpi, color at 200 dpi.
-- **Upload**: `kiosk.py` uploads each PDF to Papra, named `Scan YYYY-MM-DD HH-MM-SS.pdf`.
-  If Papra can't be reached the upload is retried automatically (after 30 s,
-  then up to every 15 min) and survives restarts. If Papra rejects the upload
-  (for example a bad API key), it waits for **Retry** on the web page; uploads
-  are also retried automatically once a Papra connection check passes.
+- **Upload**: `kiosk.py` uploads each PDF to Paperless-ngx, titled `Scan YYYY-MM-DD HH-MM-SS`.
+  Paperless then consumes it in the background (OCR, matching rules), so it
+  shows up in Paperless a little after the upload finishes.
+  If Paperless can't be reached the upload is retried automatically (after 30 s,
+  then up to every 15 min) and survives restarts. If Paperless rejects the upload
+  (for example a bad API token), it waits for **Retry** on the web page; uploads
+  are also retried automatically once a Paperless connection check passes.
 - **Storage**: scans live in `~/scanner-kiosk-data/jobs/`. Uploaded PDFs are
   kept for 7 days (viewable from the web page), then deleted.
 

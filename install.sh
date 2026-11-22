@@ -82,15 +82,15 @@ if ! sudo test -e "$ENV_FILE"; then
     sudo install -m 600 -o root -g root "$APP_DIR/scanner-kiosk.env.example" "$ENV_FILE"
     echo "Created it from scanner-kiosk.env.example."
 fi
-if sudo grep -Eq '^PAPRA_(URL|ORG_ID|API_KEY)=\s*$' "$ENV_FILE"; then
+if sudo grep -Eq '^PAPERLESS_(URL|TOKEN)=\s*$' "$ENV_FILE"; then
     configured=no
-    warn "The Papra settings aren't filled in yet. Scans will wait until they are."
+    warn "The Paperless settings aren't filled in yet. Scans will wait until they are."
 else
     configured=yes
-    echo "Checking the connection to Papra..."
+    echo "Checking the connection to Paperless..."
     if ! sudo env -i PATH="$PATH" bash -c "set -a; source '$ENV_FILE'; set +a; \
-            cd '$APP_DIR' && exec '$APP_DIR/.venv/bin/python' papra.py"; then
-        warn "Papra check failed. Scans will wait and upload once the settings work."
+            cd '$APP_DIR' && exec '$APP_DIR/.venv/bin/python' paperless.py"; then
+        warn "Paperless check failed. Scans will wait and upload once the settings work."
         configured=no
     fi
 fi
@@ -100,7 +100,7 @@ step "Installing the $SERVICE service"
 mkdir -p "$DATA_DIR"
 sudo tee "$UNIT_FILE" >/dev/null <<EOF
 [Unit]
-Description=Scanner Kiosk (ScanSnap button -> Papra)
+Description=Scanner Kiosk (ScanSnap button -> Paperless-ngx)
 After=network-online.target
 Wants=network-online.target
 
@@ -129,7 +129,7 @@ for _ in $(seq 1 20); do
         echo "Live log: journalctl -u $SERVICE -f"
         if [[ $configured == no ]]; then
             echo
-            echo "Next: put your Papra details in the settings file, then restart:"
+            echo "Next: put your Paperless details in the settings file, then restart:"
             echo "  sudo nano $ENV_FILE"
             echo "  sudo systemctl restart $SERVICE"
         fi

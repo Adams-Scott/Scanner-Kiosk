@@ -95,7 +95,7 @@
   <section class="card hero">
     <div class="big" id="hero">Connecting…</div>
     <div class="line"><span class="dot" id="scanner-dot"></span><span id="scanner-msg">Scanner</span></div>
-    <div class="line"><span class="dot" id="papra-dot"></span><span id="papra-msg">Papra</span></div>
+    <div class="line"><span class="dot" id="paperless-dot"></span><span id="paperless-msg">Paperless</span></div>
   </section>
   <p class="hint" id="button-info"></p>
 
@@ -112,7 +112,7 @@
     <label class="check"><input type="checkbox" id="skip_blank"> Remove blank pages</label>
     <button class="primary" id="scan-btn" type="submit">Scan</button>
   </form>
-  <p class="hint">Load the paper first. Scans upload to Papra automatically.</p>
+  <p class="hint">Load the paper first. Scans upload to Paperless automatically.</p>
 
   <div class="row"><h2>Recent scans</h2><button class="link" id="retry-all" hidden>Retry failed</button></div>
   <div class="jobs" id="jobs"><div class="empty">No scans yet</div></div>
@@ -205,8 +205,8 @@ function render(s) {
   $("button-info").textContent = `The Scan button scans ${s.button}.`;
   $("scanner-dot").className = "dot " + (online ? "ok" : "bad");
   $("scanner-msg").textContent = online ? "Scanner connected" : s.scanner.message;
-  $("papra-dot").className = "dot " + (s.papra.ok ? "ok" : s.papra.ok === false ? "bad" : "");
-  $("papra-msg").textContent = s.papra.ok ? "Papra connected" : s.papra.ok === false ? s.papra.message : "Checking Papra…";
+  $("paperless-dot").className = "dot " + (s.paperless.ok ? "ok" : s.paperless.ok === false ? "bad" : "");
+  $("paperless-msg").textContent = s.paperless.ok ? "Paperless connected" : s.paperless.ok === false ? s.paperless.message : "Checking Paperless…";
 
   if (!formReady) setupForm(s.sizes);
   $("scan-btn").disabled = !!busy || !online;
